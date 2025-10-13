@@ -21,6 +21,7 @@ const MAX_SECONDS = 59 * 60 + 59;
 
 const initialState = {
   seconds: 0,
+  periodDuration: 20, // oletus 20 min (nyt minuutteina)
   running: false,
   direction: "up", // "up" | "down"
   period: 1, // 1..4
@@ -40,6 +41,10 @@ const initialState = {
 
 function reducer(state, action) {
   switch (action.type) {
+    case "SET_PERIOD_DURATION": {
+      const duration = Math.max(1, Number(action.duration) || 20);
+      return { ...state, periodDuration: duration };
+    }
     case "TICK": {
       // Tick either main game clock (when running) OR timeout (when active)
       const timeoutActive = !!(state.timeout && state.timeout.active);
@@ -56,9 +61,10 @@ function reducer(state, action) {
       }
 
       // Otherwise tick the main game clock
+      const periodSeconds = state.periodDuration * 60;
       const nextSeconds = state.direction === "down"
-        ? clamp(state.seconds - 1, 0, MAX_SECONDS)
-        : clamp(state.seconds + 1, 0, MAX_SECONDS);
+        ? clamp(state.seconds - 1, 0, periodSeconds)
+        : clamp(state.seconds + 1, 0, periodSeconds);
 
       // Penalties tick down while the game clock runs
       const dec = (arr) => arr.map((s) => Math.max(0, s - 1)).filter((s) => s > 0);
@@ -68,7 +74,9 @@ function reducer(state, action) {
       };
 
       // Stop at terminal values depending on direction
-      const reachedEnd = state.direction === "down" ? nextSeconds === 0 : nextSeconds === MAX_SECONDS;
+      const reachedEnd = state.direction === "down"
+        ? nextSeconds === 0
+        : nextSeconds === periodSeconds;
       if (reachedEnd) {
         return { ...state, seconds: nextSeconds, penalties: nextPens, running: false, rev: state.rev + 1 };
       }
@@ -80,9 +88,18 @@ function reducer(state, action) {
     case "STOP":
       return state.running ? { ...state, running: false, rev: state.rev + 1 } : state;
 
-    case "RESET_CLOCK":
+    case "RESET_CLOCK": {
       const next = clamp((state.period ?? 1) + 1, 1, 4);
-      return { ...state, seconds: 0, period: next, running: false, direction: "up", rev: state.rev + 1 };
+      return {
+        ...state,
+        seconds: 0,
+        period: next,
+        running: false,
+        direction: "up",
+        timeoutsUsed: { home: false, guest: false },
+        rev: state.rev + 1
+      };
+    }
     case "RESET_ALL":
       return {
         ...state,
@@ -119,15 +136,36 @@ function reducer(state, action) {
 
     case "PERIOD_NEXT": {
       const next = clamp((state.period ?? 1) + 1, 1, 4);
-      return { ...state, period: next, running: false, direction: "up", rev: state.rev + 1 };
+      return {
+        ...state,
+        period: next,
+        running: false,
+        direction: "up",
+        timeoutsUsed: { home: false, guest: false },
+        rev: state.rev + 1
+      };
     }
     case "PERIOD_PREV": {
       const prev = clamp((state.period ?? 1) - 1, 1, 4);
-      return { ...state, period: prev, running: false, direction: "up", rev: state.rev + 1 };
+      return {
+        ...state,
+        period: prev,
+        running: false,
+        direction: "up",
+        timeoutsUsed: { home: false, guest: false },
+        rev: state.rev + 1
+      };
     }
     case "SET_PERIOD": {
       const p = clamp(Number(action.to) || 1, 1, 4);
-      return { ...state, period: p, running: false, direction: "up", rev: state.rev + 1 };
+      return {
+        ...state,
+        period: p,
+        running: false,
+        direction: "up",
+        timeoutsUsed: { home: false, guest: false },
+        rev: state.rev + 1
+      };
     }
 
     // --- Penalties ---
@@ -273,6 +311,7 @@ function useEndOfTimeSound(state, { enabled = true, onlyOperator = true, src, vo
   const { play } = useAudio({ src, volume, enabled });
   const playedForRev = useRef(null);
   const prevTimeoutActive = useRef(false);
+  const prevTimeoutTeam = useRef(null);
   const role = useMemo(() => new URLSearchParams(window.location.search).get("role"), []);
   const isOperator = role !== "display";
 
@@ -287,18 +326,26 @@ function useEndOfTimeSound(state, { enabled = true, onlyOperator = true, src, vo
     if (!shouldPlayHere || !enabled) return;
 
     // 1) Main clock end conditions
-    const hitMainEnd = state.direction === "down" ? state.seconds === 0 : state.seconds === MAX_SECONDS;
+    const periodSeconds = state.periodDuration * 60;
+    const hitMainEnd = state.direction === "down"
+      ? state.seconds === 0
+      : state.seconds === periodSeconds;
 
     // 2) Timeout end condition: detect transition active -> inactive
     const timeoutActive = !!(state.timeout && state.timeout.active);
-    const timeoutEndedNow = prevTimeoutActive.current && !timeoutActive; // last tick ended it
+    const timeoutEndedNow = prevTimeoutActive.current && !timeoutActive;
 
-    if ((hitMainEnd && playedForRev.current !== state.rev) || timeoutEndedNow) {
+    // Soitetaan summeri vain kun aikalisä päättyy, ei kun se alkaa
+    if (hitMainEnd && playedForRev.current !== state.rev) {
       playedForRev.current = state.rev;
+      play();
+    }
+    if (timeoutEndedNow && prevTimeoutTeam.current !== null) {
       play();
     }
 
     prevTimeoutActive.current = timeoutActive;
+    prevTimeoutTeam.current = state.timeout && state.timeout.active ? state.timeout.team : null;
   }, [state.seconds, state.direction, state.rev, state.timeout, enabled, isOperator, onlyOperator, play]);
 }
 
@@ -309,16 +356,32 @@ function OperatorView(props) {
   const canAddGuestPenalty = !state.running && state.penalties.guest.length < 2;
 
   return (
-        <div style={{
-      minHeight: "100vh",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 24,
-      textAlign: "center",
-      position: "relative",
-    }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 24,
+        textAlign: "center",
+        position: "relative",
+      }}
+    >
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          Eräajan pituus (minuutteina):
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={props.state.periodDuration}
+            onChange={e => props.dispatch({ type: "SET_PERIOD_DURATION", duration: e.target.value })}
+            style={{ width: 80 }}
+          />
+          <span style={{ fontSize: 12, color: '#666' }}>(esim. 20 = 20 min)</span>
+        </label>
+      </div>
       <div style={{ fontSize: 80, fontVariantNumeric: "tabular-nums" }}>{formatMMSS((state.timeout && state.timeout.active) ? state.timeout.seconds : state.seconds)}</div>
       <div style={{ display: "grid", gridTemplateColumns: "auto auto auto auto", alignItems: "center", gap: 12 }}>
         {state.running ? (
@@ -670,18 +733,20 @@ function DisplayView({ state, soundUrl, volume }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12 }}>
         <div>
-            <div style={{
-              marginTop: 8,
-              padding: "6px 12px",
-              borderRadius: 999,
-              background: (state.timeoutsUsed && state.timeoutsUsed.home) ? "#ef4444" : "#000", 
-              color: "#111827",
-              fontSize: 28,
-              fontWeight: 700,
-              letterSpacing: 1,
-            }}>
-               
-            </div>
+            {((state.timeout && state.timeout.active && state.timeout.team === "home") ||
+             (!state.timeoutsUsed.home && !(state.timeout && state.timeout.active) && (state.seconds > 0 || state.period > 1))) ? (
+              <div style={{
+                marginTop: 8,
+                padding: "6px 12px",
+                borderRadius: 999,
+                background: "#ef4444",
+                color: "#111827",
+                fontSize: 28,
+                fontWeight: 700,
+                letterSpacing: 1,
+              }}>
+              </div>
+            ) : null}
           <br></br>
           <ScorePill label={(state.homeName || "KOTI").toUpperCase()} value={state.home} />
           <br></br>
@@ -690,18 +755,20 @@ function DisplayView({ state, soundUrl, volume }) {
         <div style={{ fontSize: 40, letterSpacing: 1, paddingBottom: "80px" }}>ERÄ {state.period ?? 1}</div>
         <div>
 
-            <div style={{
-              marginTop: 8,
-              padding: "6px 12px",
-              borderRadius: 999,
-              background: (state.timeoutsUsed && state.timeoutsUsed.guest) ? "#ef4444" : "#000", 
-              color: "#111827",
-              fontSize: 28,
-              fontWeight: 700,
-              letterSpacing: 1,
-            }}>
-               
-            </div>
+            {((state.timeout && state.timeout.active && state.timeout.team === "guest") ||
+             (!state.timeoutsUsed.guest && !(state.timeout && state.timeout.active) && (state.seconds > 0 || state.period > 1))) ? (
+              <div style={{
+                marginTop: 8,
+                padding: "6px 12px",
+                borderRadius: 999,
+                background: "#ef4444",
+                color: "#111827",
+                fontSize: 28,
+                fontWeight: 700,
+                letterSpacing: 1,
+              }}>
+              </div>
+            ) : null}
 
           <br></br>
           <ScorePill label={(state.guestName || "VIERAS").toUpperCase()} value={state.guest} />
@@ -778,6 +845,14 @@ function ScorePill({ label, value }) {
 
 // ---------- Root ----------
 export default function App() {
+  useEffect(() => {
+    const role = new URLSearchParams(window.location.search).get("role");
+    if (role === "display") {
+      document.title = "Tulostaulu – Esitys";
+    } else {
+      document.title = "Tulostaulu";
+    }
+  }, []);
   const [state, dispatch] = useReducer(reducer, initialState);
   const [soundOn, setSoundOn] = useState(true); // per-tab toggle
   const [soundUrl, setSoundUrl] = useState("buzzer.mp3"); // place file in public/
