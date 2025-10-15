@@ -267,10 +267,28 @@ function useCrossTabSync(state, dispatch) {
 // ---------- Timer loop ----------
 function useGameLoop(state, dispatch) {
   const active = state.running || (state.timeout && state.timeout.active);
+  const lastTickRef = useRef(null);
   useEffect(() => {
     if (!active) return;
-    const id = setInterval(() => dispatch({ type: "TICK" }), 1000);
-    return () => clearInterval(id);
+    let rafId;
+    let lastTick = Date.now();
+    lastTickRef.current = lastTick;
+    //let lastLogTick = lastTick;
+    const tick = () => {
+      const now = Date.now();
+      if (now - lastTickRef.current >= 1000) {
+        //const drift = now - lastTickRef.current - 1000;
+        //console.log(`Kellon sekuntiväli: ${(now - lastLogTick)/1000}s, heitto: ${drift}ms, sekunnit: ${new Date().toLocaleTimeString()}`);
+        //lastLogTick = now;
+        lastTickRef.current += 1000;
+        dispatch({ type: "TICK" });
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [active, dispatch]);
 }
 
