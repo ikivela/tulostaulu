@@ -127,12 +127,12 @@ function reducer(state, action) {
       return { ...state, guest: Math.max(0, state.guest - 1), rev: state.rev + 1 };
     case "SET_HOME_NAME": {
       const name = String(action.name ?? "").trim();
-      return { ...state, homeName: name ? name.slice(0, 24) : "Koti", rev: state.rev + 1 };
+      return { ...state, homeName: name.slice(0, 24), rev: state.rev + 1 };
     }
     case "SET_GUEST_NAME": {
       const name = String(action.name ?? "").trim();
-      return { ...state, guestName: name ? name.slice(0, 24) : "Vieras", rev: state.rev + 1 };
-    };
+      return { ...state, guestName: name.slice(0, 24), rev: state.rev + 1 };
+    }
 
     case "PERIOD_NEXT": {
       const next = clamp((state.period ?? 1) + 1, 1, 4);
@@ -346,7 +346,7 @@ function useEndOfTimeSound(state, { enabled = true, onlyOperator = true, src, vo
 
     prevTimeoutActive.current = timeoutActive;
     prevTimeoutTeam.current = state.timeout && state.timeout.active ? state.timeout.team : null;
-  }, [state.seconds, state.direction, state.rev, state.timeout, enabled, isOperator, onlyOperator, play]);
+    }, [state.seconds, state.direction, state.rev, state.timeout, enabled, isOperator, onlyOperator, play, state.periodDuration]);
 }
 
 // ---------- Views ----------
@@ -733,8 +733,7 @@ function DisplayView({ state, soundUrl, volume }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12 }}>
         <div>
-            {((state.timeout && state.timeout.active && state.timeout.team === "home") ||
-             (!state.timeoutsUsed.home && !(state.timeout && state.timeout.active) && (state.seconds > 0 || state.period > 1))) ? (
+            {(state.timeout && state.timeout.active && state.timeout.team === "home") ? (
               <div style={{
                 marginTop: 8,
                 padding: "6px 12px",
@@ -748,15 +747,14 @@ function DisplayView({ state, soundUrl, volume }) {
               </div>
             ) : null}
           <br></br>
-          <ScorePill label={(state.homeName || "KOTI").toUpperCase()} value={state.home} />
+          <ScorePill label={state.homeName ? state.homeName.toUpperCase() : ""} value={state.home} />
           <br></br>
           <PenaltyChips title="KOTI" list={state.penalties.home} />
         </div>
         <div style={{ fontSize: 40, letterSpacing: 1, paddingBottom: "80px" }}>ERÄ {state.period ?? 1}</div>
         <div>
 
-            {((state.timeout && state.timeout.active && state.timeout.team === "guest") ||
-             (!state.timeoutsUsed.guest && !(state.timeout && state.timeout.active) && (state.seconds > 0 || state.period > 1))) ? (
+            {(state.timeout && state.timeout.active && state.timeout.team === "guest") ? (
               <div style={{
                 marginTop: 8,
                 padding: "6px 12px",
@@ -771,7 +769,7 @@ function DisplayView({ state, soundUrl, volume }) {
             ) : null}
 
           <br></br>
-          <ScorePill label={(state.guestName || "VIERAS").toUpperCase()} value={state.guest} />
+          <ScorePill label={state.guestName ? state.guestName.toUpperCase() : ""} value={state.guest} />
           <br></br>
           <PenaltyChips title="VIERAS" list={state.penalties.guest} />
         </div>
