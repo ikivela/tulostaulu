@@ -21,7 +21,7 @@ const MAX_SECONDS = 59 * 60 + 59;
 
 const initialState = {
   seconds: 0,
-  periodDuration: 20, // oletus 20 min (nyt minuutteina)
+  periodDuration: 15, // oletus 15 min (nyt minuutteina)
   running: false,
   direction: "up", // "up" | "down"
   period: 1, // 1..4
@@ -373,6 +373,10 @@ function OperatorView(props) {
   const canAddHomePenalty = !state.running && state.penalties.home.length < 2;
   const canAddGuestPenalty = !state.running && state.penalties.guest.length < 2;
 
+  // Versionumero muodossa V{vvvv-kk-pp}
+  const today = new Date();
+  const version = `V${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+
   return (
     <div
       style={{
@@ -404,7 +408,6 @@ function OperatorView(props) {
       <div style={{ display: "grid", gridTemplateColumns: "auto auto auto auto", alignItems: "center", gap: 12 }}>
         {state.running ? (
           <button
-            disabled={(state.timeout && state.timeout.active)}
             onClick={() => dispatch({ type: "STOP" })}
             style={{
               padding: "14px 22px",
@@ -414,7 +417,7 @@ function OperatorView(props) {
               border: "none",
               borderRadius: 12,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              cursor: ((state.timeout && state.timeout.active)) ? "not-allowed" : "pointer",
+              cursor: "pointer",
             }}
             title="Pysäytä pelikello"
           >
@@ -422,60 +425,70 @@ function OperatorView(props) {
           </button>
         ) : (
           <button
-            disabled={(state.timeout && state.timeout.active)}
+            disabled={state.timeout && state.timeout.active}
             onClick={() => dispatch({ type: "START" })}
             style={{
               padding: "14px 22px",
               fontSize: 18,
-              background: (state.running || (state.timeout && state.timeout.active)) ? "#9ca3af" : "#22c55e",
+              background: (state.timeout && state.timeout.active) ? "#9ca3af" : "#22c55e",
               color: "#fff",
               border: "none",
               borderRadius: 12,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              cursor: ((state.timeout && state.timeout.active)) ? "not-allowed" : "pointer",
+              cursor: (state.timeout && state.timeout.active) ? "not-allowed" : "pointer",
             }}
             title="Käynnistä pelikello"
           >
             ▶ Start
           </button>
-  
         )}
         <button
-          onClick={() => dispatch({ type: "RESET_CLOCK" })}
-          disabled={state.running || (state.timeout && state.timeout.active)}
+          disabled={state.running}
+          onClick={() => {
+            if (window.confirm("Aloitetaanko uusi erä?")) {
+              dispatch({ type: "RESET_CLOCK" });
+            }
+          }}
           style={{
               padding: "14px 22px",
               fontSize: 18,
-              background: (state.running || (state.timeout && state.timeout.active)) ? "#9ca3af" : "#3b82f6",
+              background: state.running ? "#9ca3af" : "#3b82f6",
               color: "#fff",
               border: "none",
               borderRadius: 12,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              cursor: (state.running || (state.timeout && state.timeout.active)) ? "not-allowed" : "pointer",
+              cursor: state.running ? "not-allowed" : "pointer",
             }}
         >Uusi erä</button>
-        <button onClick={() => dispatch({ type: "RESET_ALL" })}
+        <button 
           disabled={state.running}
+          onClick={() => {
+            if (window.confirm("Aloitetaanko uusi ottelu?")) {
+              dispatch({ type: "RESET_ALL" });
+            }
+          }}
           style={{
               padding: "14px 22px",
               fontSize: 18,
-              background: (state.running) ? "#9ca3af" : "#3b82f6",
+              background: state.running ? "#9ca3af" : "#3b82f6",
               color: "#fff",
               border: "none",
               borderRadius: 12,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              cursor: (state.running) ? "not-allowed" : "pointer",
+              cursor: state.running ? "not-allowed" : "pointer",
             }}>Uusi ottelu</button>
-        <button onClick={() => window.open(`${window.location.pathname}?role=display`, "_blank")}
+        <button 
+          disabled={state.running}
+          onClick={() => window.open(`${window.location.pathname}?role=display`, "_blank")}
           style={{
               padding: "14px 22px",
               fontSize: 18,
-              background: (state.running) ? "#9ca3af" : "#3b82f6",
+              background: state.running ? "#9ca3af" : "#3b82f6",
               color: "#fff",
               border: "none",
               borderRadius: 12,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              cursor: (state.running) ? "not-allowed" : "pointer",
+              cursor: state.running ? "not-allowed" : "pointer",
             }}>Avaa esitys ikkuna</button>
       </div>
 
@@ -535,7 +548,11 @@ function OperatorView(props) {
 
       <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: 12}}>
           <button
-            onClick={() => dispatch({ type: "START_TIMEOUT", team: "home" })}
+            onClick={() => {
+              if (!state.running && window.confirm("Aloitetaanko aikalisä kotijoukkueelle?")) {
+                dispatch({ type: "START_TIMEOUT", team: "home" });
+              }
+            }}
             disabled={state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.home)}
             style={{
               padding: "14px 22px",
@@ -552,7 +569,11 @@ function OperatorView(props) {
             ⏱️ Aikalisä Koti
           </button>
           <button
-            onClick={() => dispatch({ type: "START_TIMEOUT", team: "guest" })}
+            onClick={() => {
+              if (!state.running && window.confirm("Aloitetaanko aikalisä vierasjoukkueelle?")) {
+                dispatch({ type: "START_TIMEOUT", team: "guest" });
+              }
+            }}
             disabled={state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.guest)}
             style={{
               padding: "14px 22px",
@@ -636,6 +657,9 @@ function OperatorView(props) {
           onChange={(e) => setVolume(parseFloat(e.target.value))}
         />
       </label>
+
+      {/* Footeri: versionumero */}
+      <footer style={{ marginTop: 48, fontSize: 14, color: '#888' }}>{version}</footer>
     </div>
   );
 }
@@ -854,7 +878,7 @@ function ScorePill({ label, value }) {
   return (
     <div style={{ border: "2px solid #fff", borderRadius: 16, padding: "12px 20px", minWidth: 160 }}>
       <div style={{ marginBottom: 4, fontSize: 30 }}>{label}</div>
-      <div style={{ fontSize: 80, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div style={{ fontSize: 120, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{value}</div>
     </div>
   );
 }
@@ -869,7 +893,21 @@ export default function App() {
       document.title = "Tulostaulu";
     }
   }, []);
-  const [state, dispatch] = useReducer(reducer, initialState);
+  // Lataa tallennettu state localStoragesta, jos löytyy
+  const getInitialState = () => {
+    try {
+      const saved = localStorage.getItem("scoreboard_state_v1");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Varmista, että parsed on olio ja sisältää tarvittavat kentät
+        if (parsed && typeof parsed === "object" && parsed.seconds !== undefined) {
+          return { ...initialState, ...parsed };
+        }
+      }
+    } catch (e) {}
+    return initialState;
+  };
+  const [state, dispatch] = useReducer(reducer, getInitialState());
   const [soundOn, setSoundOn] = useState(true); // per-tab toggle
   const [soundUrl, setSoundUrl] = useState("buzzer.mp3"); // place file in public/
   const [volume, setVolume] = useState(1);
@@ -877,6 +915,13 @@ export default function App() {
   // ticking & cross-tab sync
   useGameLoop(state, dispatch);
   useCrossTabSync(state, dispatch);
+
+  // Tallennetaan state localStorageen aina kun se muuttuu
+  useEffect(() => {
+    try {
+      localStorage.setItem("scoreboard_state_v1", JSON.stringify(state));
+    } catch (e) {}
+  }, [state]);
 
   // end-of-time MP3 – play on both tabs (operator & display)
   useEndOfTimeSound(state, { enabled: soundOn, onlyOperator: false, src: soundUrl, volume });
