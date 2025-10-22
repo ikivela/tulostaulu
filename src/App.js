@@ -449,7 +449,7 @@ function OperatorView(props) {
             min={1}
             max={60}
             value={breakMinutes}
-            onChange={e => setBreakMinutes(Math.max(1, Math.min(60, Number(e.target.value) || 5)))}
+            onChange={e => setBreakMinutes(Math.max(1, Math.min(60, Number(e.target.value) || 2)))}
             style={{ width: 80 }}
           />
         </label>
@@ -618,7 +618,7 @@ function OperatorView(props) {
               borderRadius: 12,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
               cursor: state.running ? "not-allowed" : "pointer",
-            }}>Avaa esitys ikkuna</button>
+            }}>Avaa tulostaulu</button>
       </div>
 
       {/* Scores */}
@@ -678,7 +678,7 @@ function OperatorView(props) {
       <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: 12}}>
           <button
             onClick={() => {
-              if (!state.running && window.confirm("Aloitetaanko aikalisä kotijoukkueelle?")) {
+              if (!state.running && window.confirm(`Aloitetaanko aikalisä joukkueelle ${state.homeName}?`)) {
                 dispatch({ type: "START_TIMEOUT", team: "home" });
               }
             }}
@@ -693,13 +693,13 @@ function OperatorView(props) {
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
               cursor: (state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.home)) ? "not-allowed" : "pointer",
             }}
-            title={state.timeoutsUsed && state.timeoutsUsed.home ? "Koti on käyttänyt aikalisän" : "Aloita aikalisä (30s) kotijoukkueelle"}
+            title={state.timeoutsUsed && state.timeoutsUsed.home ? `${state.homeName} on käyttänyt aikalisän` : `Aloita aikalisä (30s) joukkueelle ${state.homeName}`}
           >
-            ⏱️ Aikalisä Koti
+            ⏱️ Aikalisä {state.homeName}
           </button>
           <button
             onClick={() => {
-              if (!state.running && window.confirm("Aloitetaanko aikalisä vierasjoukkueelle?")) {
+              if (!state.running && window.confirm(`Aloitetaanko aikalisä joukkueelle ${state.guestName}?`)) {
                 dispatch({ type: "START_TIMEOUT", team: "guest" });
               }
             }}
@@ -714,9 +714,9 @@ function OperatorView(props) {
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
               cursor: (state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.guest)) ? "not-allowed" : "pointer",
             }}
-            title={state.timeoutsUsed && state.timeoutsUsed.guest ? "Vieras on käyttänyt aikalisän" : "Aloita aikalisä (30s) vierasjoukkueelle"}
+            title={state.timeoutsUsed && state.timeoutsUsed.guest ? `${state.guestName} on käyttänyt aikalisän` : `Aloita aikalisä (30s) joukkueelle ${state.guestName}`}
           >
-            ⏱️ Aikalisä Vieras
+            ⏱️ Aikalisä {state.guestName}
           </button>
         </div>
 
@@ -888,63 +888,63 @@ function DisplayView({ state, soundUrl, volume }) {
   return (
     <div style={{
       minHeight: "100vh",
+      width: "100vw",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      gap: 24,
+      gap: "4vh",
       background: "black",
       color: "white",
       textAlign: "center",
       position: "relative",
+      overflow: "hidden",
     }}>
       
-      <div style={{ fontSize: 160, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+  <div style={{ fontSize: "24vw", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
         {formatMMSS((state.timeout && state.timeout.active) ? state.timeout.seconds : state.seconds)}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12 }}>
-        <div>
-            {(state.timeout && state.timeout.active && state.timeout.team === "home") ? (
-              <div style={{
-                marginTop: 8,
-                padding: "6px 12px",
-                borderRadius: 999,
-                background: "#ef4444",
-                color: "#111827",
-                fontSize: 28,
-                fontWeight: 700,
-                letterSpacing: 1,
-              }}>
-              </div>
-            ) : null}
-          <br></br>
-          <ScorePill label={state.homeName ? state.homeName.toUpperCase() : ""} value={state.home} />
-          <br></br>
+  <div style={{ display: "grid", gridTemplateColumns: "auto auto auto", alignItems: "center", gap: "2vw" }}>
+        {/* KOTI jäähyt vasemmalle allekkain */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
           <PenaltyChips title="KOTI" list={state.penalties.home} />
         </div>
-        <div style={{ fontSize: 40, letterSpacing: 1, paddingBottom: "80px" }}>ERÄ {state.period ?? 1}</div>
-        <div>
-
-            {(state.timeout && state.timeout.active && state.timeout.team === "guest") ? (
-              <div style={{
-                marginTop: 8,
-                padding: "6px 12px",
-                borderRadius: 999,
-                background: "#ef4444",
-                color: "#111827",
-                fontSize: 28,
-                fontWeight: 700,
-                letterSpacing: 1,
-              }}>
-              </div>
-            ) : null}
-
-          <br></br>
-          <ScorePill label={state.guestName ? state.guestName.toUpperCase() : ""} value={state.guest} />
-          <br></br>
+        {/* Keskellä pistelaatikoiden ja erän oma div */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          {(state.timeout && state.timeout.active && state.timeout.team === "home") && (
+            <div style={{
+              marginTop: 8,
+              padding: "6px 12px",
+              borderRadius: 999,
+              background: "#ef4444",
+              color: "#111827",
+              fontSize: 28,
+              fontWeight: 700,
+              letterSpacing: 1,
+            }}></div>
+          )}
+          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "4vw" }}>
+              <ScorePill label={state.homeName ? state.homeName.toUpperCase() : ""} value={state.home} />
+              <div style={{ fontSize: "4vw", letterSpacing: 1, padding: "0 2vw" }}>ERÄ {state.period ?? 1}</div>
+              <ScorePill label={state.guestName ? state.guestName.toUpperCase() : ""} value={state.guest} />
+            </div>
+          {(state.timeout && state.timeout.active && state.timeout.team === "guest") && (
+            <div style={{
+              marginTop: 8,
+              padding: "6px 12px",
+              borderRadius: 999,
+              background: "#ef4444",
+              color: "#111827",
+              fontSize: 28,
+              fontWeight: 700,
+              letterSpacing: 1,
+            }}></div>
+          )}
+        </div>
+        {/* VIERAS jäähyt oikealle allekkain */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
           <PenaltyChips title="VIERAS" list={state.penalties.guest} />
         </div>
-        
       </div>
 
       {false && !primed && (
@@ -971,45 +971,48 @@ function DisplayView({ state, soundUrl, volume }) {
           🔊 Enable sound
         </button>
       )}
-    </div>
+      </div>
   );
 }
 
 function PenaltyChips({ title, list }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-      {list.length === 0 ? (
-        <span style={{ 
-          border: "1px solid #fff",
-          borderRadius: 10,
-          padding: "8px 24px",
-          fontVariantNumeric: "tabular-nums",
-          fontSize: 60,
-          opacity:0
-        }}>x</span>
-      ) : (
-        list.map((secs, i) => (
-          <span key={i} style={{
-            border: "1px solid #fff",
-            borderRadius: 10,
-            padding: "8px 24px",
-            fontVariantNumeric: "tabular-nums",
-            color: "#ef4444",
-            fontSize: 60,
-            fontWeight: 700,
-            background: "#fff2",
-          }}>{formatMMSS(secs)}</span>
-        ))
-      )}
-    </div>
+    
+<div style={{ display: "block" }}>
+  {list.length === 0 ? (
+    <span style={{ 
+      border: "1px solid #fff",
+      borderRadius: 10,
+      padding: "8px 24px",
+      fontVariantNumeric: "tabular-nums",
+      fontSize: 60,
+      opacity: 0
+    }}>x</span>
+  ) : (
+    list.map((secs, i) => (
+      <span key={i} style={{
+        display: "block", // Tämä varmistaa että jokainen span tulee omalle riville
+        border: "1px solid #fff",
+        borderRadius: 10,
+        padding: "8px 24px",
+        fontVariantNumeric: "tabular-nums",
+        color: "#ef4444",
+        fontSize: 60,
+        fontWeight: 700,
+        background: "#fff2",
+        marginBottom: 16 // Lisää väliä rivien väliin
+      }}>{formatMMSS(secs)}</span>
+    ))
+  )}
+</div>
   );
 }
 
 function ScorePill({ label, value }) {
   return (
     <div style={{ border: "2px solid #fff", borderRadius: 16, padding: "12px 20px", minWidth: 160 }}>
-      <div style={{ marginBottom: 4, fontSize: 30 }}>{label}</div>
-      <div style={{ fontSize: 120, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div style={{ marginBottom: 4, fontSize: 80 }}>{label}</div>
+      <div style={{ fontSize: 200, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{value}</div>
     </div>
   );
 }
