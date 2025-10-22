@@ -1,8 +1,7 @@
+  // Modal state for new match dialog
 import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
-
 /**
  * Scoreboard with operator & public view (no backend)
- * - Game clock (mm:ss), periods (1–4), goals, buzzer
  * - MP3 sound on end
  * - Cross-tab sync (BroadcastChannel / localStorage)
  * - NEW: Team-specific penalties (2:00 countdown), max 2 concurrent per team
@@ -35,6 +34,7 @@ const initialState = {
   },
   timeout: { active: false, team: null, seconds: 30 },
   timeoutsUsed: { home: false, guest: false },
+  breakActive: false,
   // monotonic revision to avoid echo loops
   rev: 0,
 };
@@ -46,7 +46,7 @@ function reducer(state, action) {
       return { ...state, periodDuration: duration };
     }
     case "TICK": {
-      // Tick either main game clock (when running) OR timeout (when active)
+      // Tick either main game clock (when running) OR timeout (when active) OR break
       const timeoutActive = !!(state.timeout && state.timeout.active);
       if (!(state.running || timeoutActive)) return state;
 
@@ -58,6 +58,26 @@ function reducer(state, action) {
           return { ...state, timeout: { active: false, team: null, seconds: 30 }, rev: state.rev + 1 };
         }
         return { ...state, timeout };
+      }
+
+      // Break logic
+      if (state.breakActive) {
+        const nextSeconds = Math.max(0, state.seconds - 1);
+        if (nextSeconds === 0) {
+          // Break finished, reset breakActive and stop clock
+            const nextPeriod = clamp((state.period ?? 1) + 1, 1, 4);
+            return {
+              ...state,
+              seconds: 0,
+              period: nextPeriod,
+              running: false,
+              breakActive: false,
+              direction: "up",
+              timeoutsUsed: { home: false, guest: false },
+              rev: state.rev + 1
+            };
+        }
+        return { ...state, seconds: nextSeconds };
       }
 
       // Otherwise tick the main game clock
@@ -156,15 +176,16 @@ function reducer(state, action) {
         rev: state.rev + 1
       };
     }
-    case "SET_PERIOD": {
-      const p = clamp(Number(action.to) || 1, 1, 4);
+
+    case "START_BREAK": {
+      const minutes = Math.max(1, Number(action.minutes) || 5);
       return {
         ...state,
-        period: p,
-        running: false,
-        direction: "up",
-        timeoutsUsed: { home: false, guest: false },
-        rev: state.rev + 1
+        seconds: minutes * 60,
+        running: true,
+        direction: "down",
+        breakActive: true,
+        rev: state.rev + 1,
       };
     }
 
@@ -353,7 +374,7 @@ function useEndOfTimeSound(state, { enabled = true, onlyOperator = true, src, vo
     const timeoutActive = !!(state.timeout && state.timeout.active);
     const timeoutEndedNow = prevTimeoutActive.current && !timeoutActive;
 
-    // Soitetaan summeri vain kun aikalisä päättyy, ei kun se alkaa
+    // Soitetaan summeri kun erä päättyy, aikalisä päättyy, tai erätauko päättyy
     if (hitMainEnd && playedForRev.current !== state.rev) {
       playedForRev.current = state.rev;
       play();
@@ -361,14 +382,18 @@ function useEndOfTimeSound(state, { enabled = true, onlyOperator = true, src, vo
     if (timeoutEndedNow && prevTimeoutTeam.current !== null) {
       play();
     }
+    if (state.breakActive === false && prevTimeoutActive.current === true && state.seconds === 0) {
+      play();
+    }
 
     prevTimeoutActive.current = timeoutActive;
     prevTimeoutTeam.current = state.timeout && state.timeout.active ? state.timeout.team : null;
-    }, [state.seconds, state.direction, state.rev, state.timeout, enabled, isOperator, onlyOperator, play, state.periodDuration]);
+    }, [state.seconds, state.direction, state.rev, state.timeout, state.breakActive, enabled, isOperator, onlyOperator, play, state.periodDuration]);
 }
 
 // ---------- Views ----------
 function OperatorView(props) {
+  const [showNewMatchModal, setShowNewMatchModal] = useState(false);
   const { state, dispatch, soundOn, setSoundOn, soundUrl, setSoundUrl, volume, setVolume } = props;
   const canAddHomePenalty = !state.running && state.penalties.home.length < 2;
   const canAddGuestPenalty = !state.running && state.penalties.guest.length < 2;
@@ -376,6 +401,20 @@ function OperatorView(props) {
   // Versionumero muodossa V{vvvv-kk-pp}
   const today = new Date();
   const version = `V${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+
+  // Detect if period is finished (clock stopped at end)
+  const periodSeconds = state.periodDuration * 60;
+  const periodFinished = !state.running && !state.breakActive && ((state.direction === "down" && state.seconds === 0) || (state.direction === "up" && state.seconds === periodSeconds));
+
+  // Break duration state
+  const [breakMinutes, setBreakMinutes] = useState(5);
+  // Modal state for break dialog
+  const [showBreakModal, setShowBreakModal] = useState(false);
+  useEffect(() => {
+    if (periodFinished) {
+      setShowBreakModal(true);
+    }
+  }, [periodFinished]);
 
   return (
     <div
@@ -390,7 +429,7 @@ function OperatorView(props) {
         position: "relative",
       }}
     >
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: "flex", gap: 32 }}>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           Eräajan pituus (minuutteina):
           <input
@@ -402,6 +441,17 @@ function OperatorView(props) {
             style={{ width: 80 }}
           />
           <span style={{ fontSize: 12, color: '#666' }}>(esim. 20 = 20 min)</span>
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          Erätauon pituus (min):
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={breakMinutes}
+            onChange={e => setBreakMinutes(Math.max(1, Math.min(60, Number(e.target.value) || 5)))}
+            style={{ width: 80 }}
+          />
         </label>
       </div>
       <div style={{ fontSize: 80, fontVariantNumeric: "tabular-nums" }}>{formatMMSS((state.timeout && state.timeout.active) ? state.timeout.seconds : state.seconds)}</div>
@@ -425,48 +475,70 @@ function OperatorView(props) {
           </button>
         ) : (
           <button
-            disabled={state.timeout && state.timeout.active}
+            disabled={(state.timeout && state.timeout.active) || periodFinished}
             onClick={() => dispatch({ type: "START" })}
             style={{
               padding: "14px 22px",
               fontSize: 18,
-              background: (state.timeout && state.timeout.active) ? "#9ca3af" : "#22c55e",
+              background: ((state.timeout && state.timeout.active) || periodFinished) ? "#9ca3af" : "#22c55e",
               color: "#fff",
               border: "none",
               borderRadius: 12,
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              cursor: (state.timeout && state.timeout.active) ? "not-allowed" : "pointer",
+              cursor: ((state.timeout && state.timeout.active) || periodFinished) ? "not-allowed" : "pointer",
             }}
             title="Käynnistä pelikello"
           >
             ▶ Start
           </button>
         )}
-        <button
-          disabled={state.running}
-          onClick={() => {
-            if (window.confirm("Aloitetaanko uusi erä?")) {
-              dispatch({ type: "RESET_CLOCK" });
-            }
-          }}
-          style={{
-              padding: "14px 22px",
-              fontSize: 18,
-              background: state.running ? "#9ca3af" : "#3b82f6",
-              color: "#fff",
-              border: "none",
-              borderRadius: 12,
-              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              cursor: state.running ? "not-allowed" : "pointer",
-            }}
-        >Uusi erä</button>
+        {/* Uusi erä -nappi poistettu, erätauon jälkeen siirrytään automaattisesti seuraavaan erään */}
+      {showBreakModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          background: "rgba(0,0,0,0.35)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: "#fff",
+            padding: "32px 40px",
+            borderRadius: 16,
+            boxShadow: "0 4px 32px #0002",
+            textAlign: "center",
+            minWidth: 320,
+          }}>
+            <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 18 }}>Erä pelattu!</div>
+            <div style={{ fontSize: 18, marginBottom: 28 }}>Aloitetaanko erätauko? ({breakMinutes} minuuttia)</div>
+            <button
+              style={{
+                padding: "12px 32px",
+                fontSize: 18,
+                background: "#22c55e",
+                color: "#fff",
+                border: "none",
+                borderRadius: 10,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                // Start break: set clock to breakMinutes, direction down, running true
+                props.dispatch({ type: "START_BREAK", minutes: breakMinutes });
+                setShowBreakModal(false);
+              }}
+            >Ok</button>
+          </div>
+        </div>
+      )}
         <button 
           disabled={state.running}
-          onClick={() => {
-            if (window.confirm("Aloitetaanko uusi ottelu?")) {
-              dispatch({ type: "RESET_ALL" });
-            }
-          }}
+          onClick={() => setShowNewMatchModal(true)}
           style={{
               padding: "14px 22px",
               fontSize: 18,
@@ -477,6 +549,63 @@ function OperatorView(props) {
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
               cursor: state.running ? "not-allowed" : "pointer",
             }}>Uusi ottelu</button>
+
+      {showNewMatchModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          background: "rgba(0,0,0,0.35)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: "#fff",
+            padding: "32px 40px",
+            borderRadius: 16,
+            boxShadow: "0 4px 32px #0002",
+            textAlign: "center",
+            minWidth: 320,
+          }}>
+            <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 18 }}>Aloitetaanko uusi ottelu?</div>
+            <div style={{ display: "flex", gap: 24, justifyContent: "center", marginTop: 24 }}>
+              <button
+                style={{
+                  padding: "12px 32px",
+                  fontSize: 18,
+                  background: "#22c55e",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+                onClick={() => {
+                  dispatch({ type: "RESET_ALL" });
+                  setShowNewMatchModal(false);
+                }}
+              >Kyllä</button>
+              <button
+                style={{
+                  padding: "12px 32px",
+                  fontSize: 18,
+                  background: "#ef4444",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+                onClick={() => setShowNewMatchModal(false)}
+              >Ei</button>
+            </div>
+          </div>
+        </div>
+      )}
         <button 
           disabled={state.running}
           onClick={() => window.open(`${window.location.pathname}?role=display`, "_blank")}
@@ -848,25 +977,27 @@ function DisplayView({ state, soundUrl, volume }) {
 
 function PenaltyChips({ title, list }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
       {list.length === 0 ? (
         <span style={{ 
           border: "1px solid #fff",
-            borderRadius: 10,
-            padding: "4px 10px",
-            fontVariantNumeric: "tabular-nums",
-            fontSize: 40,
-            opacity:0
-           }}>x</span>
+          borderRadius: 10,
+          padding: "8px 24px",
+          fontVariantNumeric: "tabular-nums",
+          fontSize: 60,
+          opacity:0
+        }}>x</span>
       ) : (
         list.map((secs, i) => (
           <span key={i} style={{
             border: "1px solid #fff",
             borderRadius: 10,
-            padding: "4px 10px",
+            padding: "8px 24px",
             fontVariantNumeric: "tabular-nums",
             color: "#ef4444",
-            fontSize: 40,
+            fontSize: 60,
+            fontWeight: 700,
+            background: "#fff2",
           }}>{formatMMSS(secs)}</span>
         ))
       )}

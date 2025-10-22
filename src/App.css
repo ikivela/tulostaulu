@@ -36,3 +36,8 @@
     transform: rotate(360deg);
   }
 }
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 16px 4px #f59e42; }
+  100% { box-shadow: 0 0 32px 8px #f59e42; }
+}
