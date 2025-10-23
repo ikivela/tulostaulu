@@ -41,6 +41,17 @@ const initialState = {
 
 function reducer(state, action) {
   switch (action.type) {
+    case "CLOCK_PLUS": {
+      // Säädä pelikelloa sekunnin eteenpäin, vain kun aikalisä ei ole aktiivinen
+      if (state.timeout && state.timeout.active) return state;
+      const periodSeconds = state.periodDuration * 60;
+      return { ...state, seconds: clamp(state.seconds + 1, 0, periodSeconds), rev: state.rev + 1 };
+    }
+    case "CLOCK_MINUS": {
+      // Säädä pelikelloa sekunnin taaksepäin, vain kun aikalisä ei ole aktiivinen
+      if (state.timeout && state.timeout.active) return state;
+      return { ...state, seconds: Math.max(0, state.seconds - 1), rev: state.rev + 1 };
+    }
     case "SET_PERIOD_DURATION": {
       const duration = Math.max(1, Number(action.duration) || 20);
       return { ...state, periodDuration: duration };
@@ -407,7 +418,7 @@ function OperatorView(props) {
   const periodFinished = !state.running && !state.breakActive && ((state.direction === "down" && state.seconds === 0) || (state.direction === "up" && state.seconds === periodSeconds));
 
   // Break duration state
-  const [breakMinutes, setBreakMinutes] = useState(5);
+  const [breakMinutes, setBreakMinutes] = useState(2);
   // Modal state for break dialog
   const [showBreakModal, setShowBreakModal] = useState(false);
   useEffect(() => {
@@ -455,6 +466,38 @@ function OperatorView(props) {
         </label>
       </div>
       <div style={{ fontSize: 80, fontVariantNumeric: "tabular-nums" }}>{formatMMSS((state.timeout && state.timeout.active) ? state.timeout.seconds : state.seconds)}</div>
+      <div style={{ display: "flex", justifyContent: "center", gap: 24, margin: "16px 0" }}>
+        <button
+          onClick={() => dispatch({ type: "CLOCK_MINUS" })}
+          disabled={(state.running || (state.timeout && state.timeout.active)) || state.seconds <= 0}
+          style={{
+            padding: "10px 24px",
+            fontSize: 32,
+            background: ((state.running || (state.timeout && state.timeout.active)) || state.seconds <= 0) ? "#9ca3af" : "#3b82f6",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+            cursor: ((state.running || (state.timeout && state.timeout.active)) || state.seconds <= 0) ? "not-allowed" : "pointer",
+          }}
+          title="Vähennä kellosta sekunti"
+        >-</button>
+        <button
+          onClick={() => dispatch({ type: "CLOCK_PLUS" })}
+          disabled={(state.running || (state.timeout && state.timeout.active)) || state.seconds >= (state.periodDuration * 60)}
+          style={{
+            padding: "10px 24px",
+            fontSize: 32,
+            background: ((state.running || (state.timeout && state.timeout.active)) || state.seconds >= (state.periodDuration * 60)) ? "#9ca3af" : "#3b82f6",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+            cursor: ((state.running || (state.timeout && state.timeout.active)) || state.seconds >= (state.periodDuration * 60)) ? "not-allowed" : "pointer",
+          }}
+          title="Lisää kelloon sekunti"
+        >+</button>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "auto auto auto auto", alignItems: "center", gap: 12 }}>
         {state.running ? (
           <button
@@ -911,35 +954,33 @@ function DisplayView({ state, soundUrl, volume }) {
         </div>
         {/* Keskellä pistelaatikoiden ja erän oma div */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          {(state.timeout && state.timeout.active && state.timeout.team === "home") && (
-            <div style={{
-              marginTop: 8,
-              padding: "6px 12px",
-              borderRadius: 999,
-              background: "#ef4444",
-              color: "#111827",
-              fontSize: 28,
-              fontWeight: 700,
-              letterSpacing: 1,
-            }}></div>
-          )}
-          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "4vw" }}>
+          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: "4vw", position: "relative" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              {(state.timeout && state.timeout.active && state.timeout.team === "home") && (
+                <div style={{
+                  width: "100%",
+                  height: 10,
+                  background: "#ef4444",
+                  borderRadius: 999,
+                  margin: "0 auto 8px auto"
+                }} />
+              )}
               <ScorePill label={state.homeName ? state.homeName.toUpperCase() : ""} value={state.home} />
-              <div style={{ fontSize: "4vw", letterSpacing: 1, padding: "0 2vw" }}>ERÄ {state.period ?? 1}</div>
+            </div>
+            <div style={{ fontSize: "4vw", letterSpacing: 1, padding: "0 2vw" }}>ERÄ {state.period ?? 1}</div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+              {(state.timeout && state.timeout.active && state.timeout.team === "guest") && (
+                <div style={{
+                  width: "80%",
+                  height: 8,
+                  background: "#ef4444",
+                  borderRadius: 999,
+                  margin: "0 auto 8px auto"
+                }} />
+              )}
               <ScorePill label={state.guestName ? state.guestName.toUpperCase() : ""} value={state.guest} />
             </div>
-          {(state.timeout && state.timeout.active && state.timeout.team === "guest") && (
-            <div style={{
-              marginTop: 8,
-              padding: "6px 12px",
-              borderRadius: 999,
-              background: "#ef4444",
-              color: "#111827",
-              fontSize: 28,
-              fontWeight: 700,
-              letterSpacing: 1,
-            }}></div>
-          )}
+          </div>
         </div>
         {/* VIERAS jäähyt oikealle allekkain */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
