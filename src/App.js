@@ -145,6 +145,7 @@ function reducer(state, action) {
         penalties: { home: [], guest: [] },
         timeout: { active: false, team: null, seconds: 30 },
         timeoutsUsed: { home: false, guest: false },
+        breakActive: false,
         rev: state.rev + 1,
       };
 
@@ -404,8 +405,29 @@ function useEndOfTimeSound(state, { enabled = true, onlyOperator = true, src, vo
 
 // ---------- Views ----------
 function OperatorView(props) {
+  // Estä summeri jos RESET_ALL (uusi ottelu) on suoritettu
+  const skipBreakEndSoundRef = useRef(false);
+  const { state, dispatch, soundOn, setSoundOn, soundUrl, volume, setVolume } = props;
+  // Soita summeri kun erätauko päättyy (breakActive false ja sekunnit 0), mutta ei RESET_ALL:lla
+  const prevBreakActive = useRef(state.breakActive);
+  useEffect(() => {
+    if (prevBreakActive.current && !state.breakActive && state.seconds === 0 && !skipBreakEndSoundRef.current) {
+      try {
+        const a = new Audio(soundUrl ?? "buzzer.mp3");
+        a.volume = Number.isFinite(volume) ? volume : 1;
+        a.play().catch(() => {});
+      } catch {}
+    }
+    prevBreakActive.current = state.breakActive;
+    // Nollaa skipBreakEndSoundRef automaattisesti kun breakActive on true
+    if (state.breakActive) skipBreakEndSoundRef.current = false;
+  }, [state.breakActive, state.seconds, soundUrl, volume]);
   const [showNewMatchModal, setShowNewMatchModal] = useState(false);
-  const { state, dispatch, soundOn, setSoundOn, soundUrl, setSoundUrl, volume, setVolume } = props;
+  // Jos uusi ottelu käynnistetään, estä summeri erätauon päättyessä
+  const handleNewMatch = () => {
+    skipBreakEndSoundRef.current = true;
+    setShowNewMatchModal(true);
+  };
   const canAddHomePenalty = !state.running && state.penalties.home.length < 2;
   const canAddGuestPenalty = !state.running && state.penalties.guest.length < 2;
 
@@ -421,11 +443,17 @@ function OperatorView(props) {
   const [breakMinutes, setBreakMinutes] = useState(2);
   // Modal state for break dialog
   const [showBreakModal, setShowBreakModal] = useState(false);
+  // Summerin soitto dialogin avauksen yhteydessä
   useEffect(() => {
     if (periodFinished) {
       setShowBreakModal(true);
+      try {
+        const a = new Audio(props.soundUrl ?? "buzzer.mp3");
+        a.volume = Number.isFinite(props.volume) ? props.volume : 1;
+        a.play().catch(() => {});
+      } catch {}
     }
-  }, [periodFinished]);
+  }, [periodFinished, props.soundUrl, props.volume]);
 
   return (
     <div
@@ -466,6 +494,9 @@ function OperatorView(props) {
         </label>
       </div>
       <div style={{ fontSize: 80, fontVariantNumeric: "tabular-nums" }}>{formatMMSS((state.timeout && state.timeout.active) ? state.timeout.seconds : state.seconds)}</div>
+      {state.breakActive && (
+        <div style={{ fontSize: 40, color: "#ef4444", marginBottom: 8, fontWeight: 700 }}>Erätauko</div>
+      )}
       <div style={{ display: "flex", justifyContent: "center", gap: 24, margin: "16px 0" }}>
         <button
           onClick={() => dispatch({ type: "CLOCK_MINUS" })}
@@ -581,7 +612,7 @@ function OperatorView(props) {
       )}
         <button 
           disabled={state.running}
-          onClick={() => setShowNewMatchModal(true)}
+          onClick={handleNewMatch}
           style={{
               padding: "14px 22px",
               fontSize: 18,
@@ -719,49 +750,85 @@ function OperatorView(props) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: 12}}>
-          <button
-            onClick={() => {
-              if (!state.running && window.confirm(`Aloitetaanko aikalisä joukkueelle ${state.homeName}?`)) {
-                dispatch({ type: "START_TIMEOUT", team: "home" });
-              }
-            }}
-            disabled={state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.home)}
-            style={{
-              padding: "14px 22px",
-              fontSize: 18,
-              background: (state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.home)) ? "#9ca3af" : "#3b82f6",
-              color: "#fff",
-              border: "none",
-              borderRadius: 12,
-              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              cursor: (state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.home)) ? "not-allowed" : "pointer",
-            }}
-            title={state.timeoutsUsed && state.timeoutsUsed.home ? `${state.homeName} on käyttänyt aikalisän` : `Aloita aikalisä (30s) joukkueelle ${state.homeName}`}
-          >
-            ⏱️ Aikalisä {state.homeName}
-          </button>
-          <button
-            onClick={() => {
-              if (!state.running && window.confirm(`Aloitetaanko aikalisä joukkueelle ${state.guestName}?`)) {
-                dispatch({ type: "START_TIMEOUT", team: "guest" });
-              }
-            }}
-            disabled={state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.guest)}
-            style={{
-              padding: "14px 22px",
-              fontSize: 18,
-              background: (state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.guest)) ? "#9ca3af" : "#3b82f6",
-              color: "#fff",
-              border: "none",
-              borderRadius: 12,
-              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-              cursor: (state.running || (state.timeout && state.timeout.active) || (state.timeoutsUsed && state.timeoutsUsed.guest)) ? "not-allowed" : "pointer",
-            }}
-            title={state.timeoutsUsed && state.timeoutsUsed.guest ? `${state.guestName} on käyttänyt aikalisän` : `Aloita aikalisä (30s) joukkueelle ${state.guestName}`}
-          >
-            ⏱️ Aikalisä {state.guestName}
-          </button>
-        </div>
+        <button
+          onClick={() => {
+            if (!state.running && window.confirm(`Aloitetaanko aikalisä joukkueelle ${state.homeName}?`)) {
+              dispatch({ type: "START_TIMEOUT", team: "home" });
+            }
+          }}
+          disabled={
+            state.running ||
+            (state.timeout && state.timeout.active) ||
+            (state.timeoutsUsed && state.timeoutsUsed.home) ||
+            state.seconds === 0 ||
+            state.seconds === (state.periodDuration * 60)
+          }
+          style={{
+            padding: "14px 22px",
+            fontSize: 18,
+            background: (
+              state.running ||
+              (state.timeout && state.timeout.active) ||
+              (state.timeoutsUsed && state.timeoutsUsed.home) ||
+              state.seconds === 0 ||
+              state.seconds === (state.periodDuration * 60)
+            ) ? "#9ca3af" : "#3b82f6",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+            cursor: (
+              state.running ||
+              (state.timeout && state.timeout.active) ||
+              (state.timeoutsUsed && state.timeoutsUsed.home) ||
+              state.seconds === 0 ||
+              state.seconds === (state.periodDuration * 60)
+            ) ? "not-allowed" : "pointer",
+          }}
+          title={state.timeoutsUsed && state.timeoutsUsed.home ? `${state.homeName} on käyttänyt aikalisän` : `Aloita aikalisä (30s) joukkueelle ${state.homeName}`}
+        >
+          ⏱️ Aikalisä {state.homeName}
+        </button>
+        <button
+          onClick={() => {
+            if (!state.running && window.confirm(`Aloitetaanko aikalisä joukkueelle ${state.guestName}?`)) {
+              dispatch({ type: "START_TIMEOUT", team: "guest" });
+            }
+          }}
+          disabled={
+            state.running ||
+            (state.timeout && state.timeout.active) ||
+            (state.timeoutsUsed && state.timeoutsUsed.guest) ||
+            state.seconds === 0 ||
+            state.seconds === (state.periodDuration * 60)
+          }
+          style={{
+            padding: "14px 22px",
+            fontSize: 18,
+            background: (
+              state.running ||
+              (state.timeout && state.timeout.active) ||
+              (state.timeoutsUsed && state.timeoutsUsed.guest) ||
+              state.seconds === 0 ||
+              state.seconds === (state.periodDuration * 60)
+            ) ? "#9ca3af" : "#3b82f6",
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+            cursor: (
+              state.running ||
+              (state.timeout && state.timeout.active) ||
+              (state.timeoutsUsed && state.timeoutsUsed.guest) ||
+              state.seconds === 0 ||
+              state.seconds === (state.periodDuration * 60)
+            ) ? "not-allowed" : "pointer",
+          }}
+          title={state.timeoutsUsed && state.timeoutsUsed.guest ? `${state.guestName} on käyttänyt aikalisän` : `Aloita aikalisä (30s) joukkueelle ${state.guestName}`}
+        >
+          ⏱️ Aikalisä {state.guestName}
+        </button>
+      </div>
 
       {/* Penalties */}
       <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: 12 }}>
@@ -807,16 +874,7 @@ function OperatorView(props) {
         Sound on
       </label>
 
-      <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-        MP3 URL:
-        <input
-          style={{ width: 220 }}
-          type="text"
-          value={soundUrl ?? "buzzer.mp3"}
-          onChange={(e) => setSoundUrl(e.target.value || "buzzer.mp3")}
-          placeholder="buzzer.mp3"
-        />
-      </label>
+      {/* MP3 URL -asetuksen input poistettu, summerin tiedostoa ei voi muuttaa käyttöliittymästä */}
 
       <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
         Volume
