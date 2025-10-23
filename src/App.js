@@ -766,7 +766,7 @@ function OperatorView(props) {
       {/* Penalties */}
       <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: 12 }}>
         <PenaltyEditor
-          title="Koti – jäähyt"
+          title={`${state.homeName} – jäähyt`}
           list={state.penalties.home}
           canAdd={canAddHomePenalty}
           onAdd={() => dispatch({ type: "ADD_PENALTY", team: "home" })}
@@ -774,7 +774,7 @@ function OperatorView(props) {
           state={state}
         />
         <PenaltyEditor
-          title="Vieras – jäähyt"
+          title={`${state.guestName} – jäähyt`}
           list={state.penalties.guest}
           canAdd={canAddGuestPenalty}
           onAdd={() => dispatch({ type: "ADD_PENALTY", team: "guest" })}
