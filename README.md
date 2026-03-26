@@ -1,6 +1,6 @@
 # Tulostaulu
 
-Selainpohjainen urheilun tulostaulu, suunniteltu erityisesti jääkiekon ajanottoon ja tulosten näyttämiseen. Sovellus toimii kahdessa välilehdessä: operaattori hallitsee peliä ja erillinen tulostaulu-näyttö näyttää tiedot yleisölle.
+Selainpohjainen urheilun tulostaulu, suunniteltu erityisesti salibandyn ajanottoon ja tulosten näyttämiseen. Sovellus toimii kahdessa välilehdessä: operaattori hallitsee peliä ja erillinen tulostaulu-näyttö näyttää tiedot yleisölle.
 
 ## Ominaisuudet
 
