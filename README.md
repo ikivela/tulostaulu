@@ -1,70 +1,74 @@
-# Getting Started with Create React App
+# Tulostaulu
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Selainpohjainen urheilun tulostaulu, suunniteltu erityisesti jääkiekon ajanottoon ja tulosten näyttämiseen. Sovellus toimii kahdessa välilehdessä: operaattori hallitsee peliä ja erillinen tulostaulu-näyttö näyttää tiedot yleisölle.
 
-## Available Scripts
+## Ominaisuudet
 
-In the project directory, you can run:
+### Kaksi näkymää
+- **Ohjausnäkymä** — pelikello, maalien kirjaus, jäähyt, aikalisät ja asetukset
+- **Tulostaulunäkymä** (`?role=display`) — suuri mustapohjaiseen näyttöön tarkoitettu esitysnäkymä
 
-### `npm start`
+### Pelikello
+- Säädettävä eräpituus (1–60 min)
+- Kellon manuaalinen säätö ±1 s kellon ollessa pysähdyksissä
+- Summeri erän päättyessä
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### Maalien kirjaus
+- +1 / −1 napit kotijoukkueelle ja vierasjoukkueelle
+- Pisteet päivittyvät tulostaululle vasta kellon käynnistyessä (mahdollistaa korjaukset ennen näyttöä)
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### Erät ja tauot
+- Erät 1–3 (+ jatkoaika)
+- Automaattinen erätauko-dialogi erän päättyessä
+- Säädettävä erätauon pituus
 
-### `npm test`
+### Jatkoaika
+- Käytössä/pois checkbox-asetuksella
+- Säädettävä jatkoajan pituus ja tauon pituus
+- Aktivoituu automaattisesti 3. erän jälkeen tasatilanteessa
+- Jos 3. erän jälkeen tilanne ei ole tasan, peli päättyy
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### Jäähyt
+- Enintään 2 samanaikaista jäähyä per joukkue (2:00)
+- Jäähyajastimet vähenevät kellon käydessä
 
-### `npm run build`
+### Aikalisät
+- 30 sekunnin aikalisä, yksi per joukkue per erä
+- Käytettävissä vain kellon ollessa pysähdyksissä
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### Muut
+- Välilehtien synkronointi (BroadcastChannel + localStorage-varajärjestelmä)
+- Tilan tallennus localStorageen (kestää sivun uudelleenlatauksen)
+- Joukkueiden nimet muokattavissa (max 24 merkkiä)
+- Summerin äänenvoimakkuuden säätö
+- "Uusi ottelu" -toiminto nollauksella
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Käynnistys
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+```bash
+npm install
+npm start
+```
 
-### `npm run eject`
+Avaa ohjausnäkymä osoitteessa [http://localhost:3000](http://localhost:3000). Tulostaulu-näyttö avataan ohjausnäkymän "Avaa tulostaulu" -napista.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Tuotantoversio
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+```bash
+npm run build
+```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+Rakentaa optimoidun version `build/`-kansioon. JavaScript-tiedostot obfuskoidaan automaattisesti.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Testit
 
-## Learn More
+```bash
+npm test
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Teknologia
 
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- React 19
+- Ei ulkoisia UI-kirjastoja — inline-tyylitys
+- `useReducer` tilanhallintaan
+- `BroadcastChannel` välilehtien synkronointiin
