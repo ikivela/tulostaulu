@@ -475,10 +475,6 @@ function OperatorView(props) {
   const canAddHomePenalty = !state.running && state.penalties.home.length < 2;
   const canAddGuestPenalty = !state.running && state.penalties.guest.length < 2;
 
-  // Versionumero muodossa V{vvvv-kk-pp}
-  const today = new Date();
-  const version = `V${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
-
   // Lasketaan voimassa oleva eräaika (jatkoajalla overtimeDuration)
   const effectivePeriodDuration = (state.overtime && state.period === 4)
     ? state.overtimeDuration
@@ -1018,8 +1014,10 @@ function OperatorView(props) {
         />
       </label>
 
-      {/* Footeri: versionumero */}
-      <footer style={{ marginTop: 48, fontSize: 14, color: '#888' }}>{version}</footer>
+      {/* Footeri: versio ja GitHub-linkki */}
+      <footer style={{ marginTop: 48, fontSize: 14, color: '#888' }}>
+        v{require('../package.json').version} | <a href="https://github.com/ikivela/tulostaulu" target="_blank" rel="noopener noreferrer" style={{ color: '#888' }}>GitHub</a>
+      </footer>
     </div>
   );
 }
