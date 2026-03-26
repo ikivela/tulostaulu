@@ -35,16 +35,25 @@ const initialState = {
   timeout: { active: false, team: null, seconds: 30 },
   timeoutsUsed: { home: false, guest: false },
   breakActive: false,
+  overtimeEnabled: false,
+  overtimeDuration: 5, // jatkoajan pituus minuuteissa
+  overtimeBreakDuration: 2, // jatkoajan tauon pituus minuuteissa
+  overtime: false, // onko jatkoaika käynnissä
   // monotonic revision to avoid echo loops
   rev: 0,
 };
 
 function reducer(state, action) {
+  // Lasketaan voimassa oleva eräaika: jatkoajalla käytetään overtimeDuration
+  const effectivePeriodDuration = (state.overtime && state.period === 4)
+    ? state.overtimeDuration
+    : state.periodDuration;
+
   switch (action.type) {
     case "CLOCK_PLUS": {
       // Säädä pelikelloa sekunnin eteenpäin, vain kun aikalisä ei ole aktiivinen
       if (state.timeout && state.timeout.active) return state;
-      const periodSeconds = state.periodDuration * 60;
+      const periodSeconds = effectivePeriodDuration * 60;
       return { ...state, seconds: clamp(state.seconds + 1, 0, periodSeconds), rev: state.rev + 1 };
     }
     case "CLOCK_MINUS": {
@@ -76,11 +85,12 @@ function reducer(state, action) {
         const nextSeconds = Math.max(0, state.seconds - 1);
         if (nextSeconds === 0) {
           // Break finished, reset breakActive and stop clock
-            const nextPeriod = clamp((state.period ?? 1) + 1, 1, 4);
+            const nextPeriod = clamp((state.period ?? 1) + 1, 1, 5);
             return {
               ...state,
               seconds: 0,
               period: nextPeriod,
+              overtime: state.overtime, // säilytetään overtime-lippu
               running: false,
               breakActive: false,
               direction: "up",
@@ -92,7 +102,7 @@ function reducer(state, action) {
       }
 
       // Otherwise tick the main game clock
-      const periodSeconds = state.periodDuration * 60;
+      const periodSeconds = effectivePeriodDuration * 60;
       const nextSeconds = state.direction === "down"
         ? clamp(state.seconds - 1, 0, periodSeconds)
         : clamp(state.seconds + 1, 0, periodSeconds);
@@ -146,8 +156,35 @@ function reducer(state, action) {
         timeout: { active: false, team: null, seconds: 30 },
         timeoutsUsed: { home: false, guest: false },
         breakActive: false,
+        overtimeEnabled: false,
+        overtime: false,
+        overtimeDuration: 5,
+        overtimeBreakDuration: 2,
         rev: state.rev + 1,
       };
+
+    case "SET_OVERTIME_ENABLED":
+      return { ...state, overtimeEnabled: !!action.value, rev: state.rev + 1 };
+    case "SET_OVERTIME_DURATION": {
+      const dur = Math.max(1, Math.min(60, Number(action.duration) || 5));
+      return { ...state, overtimeDuration: dur, rev: state.rev + 1 };
+    }
+    case "SET_OVERTIME_BREAK_DURATION": {
+      const dur = Math.max(1, Math.min(60, Number(action.duration) || 2));
+      return { ...state, overtimeBreakDuration: dur, rev: state.rev + 1 };
+    }
+    case "START_OVERTIME_BREAK": {
+      const minutes = Math.max(1, Number(action.minutes) || 2);
+      return {
+        ...state,
+        seconds: minutes * 60,
+        running: true,
+        direction: "down",
+        breakActive: true,
+        overtime: true,
+        rev: state.rev + 1,
+      };
+    }
 
     case "HOME_ADD":
       return { ...state, home: state.home + 1, rev: state.rev + 1 };
@@ -167,10 +204,13 @@ function reducer(state, action) {
     }
 
     case "PERIOD_NEXT": {
-      const next = clamp((state.period ?? 1) + 1, 1, 4);
+      const maxPeriod = state.overtimeEnabled ? 4 : 4;
+      const next = clamp((state.period ?? 1) + 1, 1, maxPeriod);
+      const isOvertime = state.overtimeEnabled && next === 4;
       return {
         ...state,
         period: next,
+        overtime: isOvertime,
         running: false,
         direction: "up",
         timeoutsUsed: { home: false, guest: false },
@@ -182,6 +222,7 @@ function reducer(state, action) {
       return {
         ...state,
         period: prev,
+        overtime: false,
         running: false,
         direction: "up",
         timeoutsUsed: { home: false, guest: false },
@@ -376,8 +417,11 @@ function useEndOfTimeSound(state, { enabled = true, onlyOperator = true, src, vo
     const shouldPlayHere = onlyOperator ? isOperator : true;
     if (!shouldPlayHere || !enabled) return;
 
-    // 1) Main clock end conditions
-    const periodSeconds = state.periodDuration * 60;
+    // Lasketaan voimassa oleva eräaika (jatkoajalla overtimeDuration)
+    const effectiveDuration = (state.overtime && state.period === 4)
+      ? state.overtimeDuration
+      : state.periodDuration;
+    const periodSeconds = effectiveDuration * 60;
     const hitMainEnd = state.direction === "down"
       ? state.seconds === 0
       : state.seconds === periodSeconds;
@@ -400,7 +444,7 @@ function useEndOfTimeSound(state, { enabled = true, onlyOperator = true, src, vo
 
     prevTimeoutActive.current = timeoutActive;
     prevTimeoutTeam.current = state.timeout && state.timeout.active ? state.timeout.team : null;
-    }, [state.seconds, state.direction, state.rev, state.timeout, state.breakActive, enabled, isOperator, onlyOperator, play, state.periodDuration]);
+    }, [state.seconds, state.direction, state.rev, state.timeout, state.breakActive, enabled, isOperator, onlyOperator, play, state.periodDuration, state.overtime, state.overtimeDuration, state.period]);
 }
 
 // ---------- Views ----------
@@ -435,25 +479,46 @@ function OperatorView(props) {
   const today = new Date();
   const version = `V${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
 
+  // Lasketaan voimassa oleva eräaika (jatkoajalla overtimeDuration)
+  const effectivePeriodDuration = (state.overtime && state.period === 4)
+    ? state.overtimeDuration
+    : state.periodDuration;
+
   // Detect if period is finished (clock stopped at end)
-  const periodSeconds = state.periodDuration * 60;
+  const periodSeconds = effectivePeriodDuration * 60;
   const periodFinished = !state.running && !state.breakActive && ((state.direction === "down" && state.seconds === 0) || (state.direction === "up" && state.seconds === periodSeconds));
 
   // Break duration state
   const [breakMinutes, setBreakMinutes] = useState(2);
   // Modal state for break dialog
   const [showBreakModal, setShowBreakModal] = useState(false);
-  // Summerin soitto dialogin avauksen yhteydessä
+  // Summerin soitto ja modaalin avaus erän päättyessä
   useEffect(() => {
     if (periodFinished) {
-      setShowBreakModal(true);
+      // Soita summeri aina erän päättyessä
       try {
         const a = new Audio(props.soundUrl ?? "buzzer.mp3");
         a.volume = Number.isFinite(props.volume) ? props.volume : 1;
         a.play().catch(() => {});
       } catch {}
+
+      const isTied = state.home === state.guest;
+      const isAfterPeriod3 = state.period === 3;
+      const isOvertime = state.overtime && state.period === 4;
+
+      // Erätauko-dialogi näytetään vain jos peli jatkuu
+      if (isOvertime) {
+        // Jatkoaika pelattu → peli päättyi, ei modaalia
+      } else if (isAfterPeriod3 && state.overtimeEnabled && !isTied) {
+        // 3. erä, jatkoaika käytössä mutta ei tasan → peli päättyi
+      } else if (isAfterPeriod3 && !state.overtimeEnabled) {
+        // 3. erä, ei jatkoaikaa → peli päättyi
+      } else {
+        // Erät 1-2 tai 3. erä tasan ja jatkoaika käytössä → näytä dialogi
+        setShowBreakModal(true);
+      }
     }
-  }, [periodFinished, props.soundUrl, props.volume]);
+  }, [periodFinished, props.soundUrl, props.volume, state.home, state.guest, state.period, state.overtimeEnabled, state.overtime]);
 
   return (
     <div
@@ -468,7 +533,7 @@ function OperatorView(props) {
         position: "relative",
       }}
     >
-      <div style={{ marginBottom: 16, display: "flex", gap: 32 }}>
+      <div style={{ marginBottom: 16, display: "flex", gap: 32, flexWrap: "wrap", justifyContent: "center" }}>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           Eräajan pituus (minuutteina):
           <input
@@ -493,9 +558,45 @@ function OperatorView(props) {
           />
         </label>
       </div>
+      <div style={{ marginBottom: 16, display: "flex", gap: 32, flexWrap: "wrap", justifyContent: "center", alignItems: "center" }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={state.overtimeEnabled}
+            onChange={e => dispatch({ type: "SET_OVERTIME_ENABLED", value: e.target.checked })}
+          />
+          Jatkoaika käytössä
+        </label>
+        {state.overtimeEnabled && (
+          <>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              Jatkoajan pituus (min):
+              <input
+                type="number"
+                min={1}
+                max={60}
+                value={state.overtimeDuration}
+                onChange={e => dispatch({ type: "SET_OVERTIME_DURATION", duration: e.target.value })}
+                style={{ width: 80 }}
+              />
+            </label>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              Jatkoajan tauon pituus (min):
+              <input
+                type="number"
+                min={1}
+                max={60}
+                value={state.overtimeBreakDuration}
+                onChange={e => dispatch({ type: "SET_OVERTIME_BREAK_DURATION", duration: e.target.value })}
+                style={{ width: 80 }}
+              />
+            </label>
+          </>
+        )}
+      </div>
       <div style={{ fontSize: 80, fontVariantNumeric: "tabular-nums" }}>{formatMMSS((state.timeout && state.timeout.active) ? state.timeout.seconds : state.seconds)}</div>
       {state.breakActive && (
-        <div style={{ fontSize: 40, color: "#ef4444", marginBottom: 8, fontWeight: 700 }}>Erätauko</div>
+        <div style={{ fontSize: 40, color: "#ef4444", marginBottom: 8, fontWeight: 700 }}>{state.overtime ? "Tauko" : "Tauko"}</div>
       )}
       <div style={{ display: "flex", justifyContent: "center", gap: 24, margin: "16px 0" }}>
         <button
@@ -515,16 +616,16 @@ function OperatorView(props) {
         >-</button>
         <button
           onClick={() => dispatch({ type: "CLOCK_PLUS" })}
-          disabled={(state.running || (state.timeout && state.timeout.active)) || state.seconds >= (state.periodDuration * 60)}
+          disabled={(state.running || (state.timeout && state.timeout.active)) || state.seconds >= periodSeconds}
           style={{
             padding: "10px 24px",
             fontSize: 32,
-            background: ((state.running || (state.timeout && state.timeout.active)) || state.seconds >= (state.periodDuration * 60)) ? "#9ca3af" : "#3b82f6",
+            background: ((state.running || (state.timeout && state.timeout.active)) || state.seconds >= periodSeconds) ? "#9ca3af" : "#3b82f6",
             color: "#fff",
             border: "none",
             borderRadius: 12,
             boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-            cursor: ((state.running || (state.timeout && state.timeout.active)) || state.seconds >= (state.periodDuration * 60)) ? "not-allowed" : "pointer",
+            cursor: ((state.running || (state.timeout && state.timeout.active)) || state.seconds >= periodSeconds) ? "not-allowed" : "pointer",
           }}
           title="Lisää kelloon sekunti"
         >+</button>
@@ -588,25 +689,54 @@ function OperatorView(props) {
             textAlign: "center",
             minWidth: 320,
           }}>
-            <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 18 }}>Erä pelattu!</div>
-            <div style={{ fontSize: 18, marginBottom: 28 }}>Aloitetaanko erätauko? ({breakMinutes} minuuttia)</div>
-            <button
-              style={{
-                padding: "12px 32px",
-                fontSize: 18,
-                background: "#22c55e",
-                color: "#fff",
-                border: "none",
-                borderRadius: 10,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-              onClick={() => {
-                // Start break: set clock to breakMinutes, direction down, running true
-                props.dispatch({ type: "START_BREAK", minutes: breakMinutes });
-                setShowBreakModal(false);
-              }}
-            >Ok</button>
+            {(() => {
+              const isTied = state.home === state.guest;
+              const isAfterPeriod3 = state.period === 3;
+              const showOvertime = state.overtimeEnabled && isAfterPeriod3 && isTied;
+              return showOvertime ? (
+                <>
+                  <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 18 }}>Tilanne tasan {state.home}–{state.guest}!</div>
+                  <div style={{ fontSize: 18, marginBottom: 28 }}>Aloitetaanko tauko? ({state.overtimeBreakDuration} min)</div>
+                  <button
+                    style={{
+                      padding: "12px 32px",
+                      fontSize: 18,
+                      background: "#f59e42",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 10,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    onClick={() => {
+                      props.dispatch({ type: "START_OVERTIME_BREAK", minutes: state.overtimeBreakDuration });
+                      setShowBreakModal(false);
+                    }}
+                  >Jatkoaika</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 18 }}>Erä {state.period} pelattu!</div>
+                  <div style={{ fontSize: 18, marginBottom: 28 }}>Aloitetaanko tauko? ({breakMinutes} min)</div>
+                  <button
+                    style={{
+                      padding: "12px 32px",
+                      fontSize: 18,
+                      background: "#22c55e",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 10,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    onClick={() => {
+                      props.dispatch({ type: "START_BREAK", minutes: breakMinutes });
+                      setShowBreakModal(false);
+                    }}
+                  >Ok</button>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -708,8 +838,8 @@ function OperatorView(props) {
         />
         <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12}}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <strong>Erä:</strong>
-            <span style={{ fontSize: 28, fontVariantNumeric: "tabular-nums" }}>{state.period ?? 1}</span>
+            <strong>{(state.overtime && state.period === 4) ? "" : "Erä:"}</strong>
+            <span style={{ fontSize: 28, fontVariantNumeric: "tabular-nums" }}>{(state.overtime && state.period === 4) ? "JA" : (state.period ?? 1)}</span>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button 
@@ -761,7 +891,7 @@ function OperatorView(props) {
             (state.timeout && state.timeout.active) ||
             (state.timeoutsUsed && state.timeoutsUsed.home) ||
             state.seconds === 0 ||
-            state.seconds === (state.periodDuration * 60)
+            state.seconds === periodSeconds
           }
           style={{
             padding: "14px 22px",
@@ -771,7 +901,7 @@ function OperatorView(props) {
               (state.timeout && state.timeout.active) ||
               (state.timeoutsUsed && state.timeoutsUsed.home) ||
               state.seconds === 0 ||
-              state.seconds === (state.periodDuration * 60)
+              state.seconds === periodSeconds
             ) ? "#9ca3af" : "#3b82f6",
             color: "#fff",
             border: "none",
@@ -782,7 +912,7 @@ function OperatorView(props) {
               (state.timeout && state.timeout.active) ||
               (state.timeoutsUsed && state.timeoutsUsed.home) ||
               state.seconds === 0 ||
-              state.seconds === (state.periodDuration * 60)
+              state.seconds === periodSeconds
             ) ? "not-allowed" : "pointer",
           }}
           title={state.timeoutsUsed && state.timeoutsUsed.home ? `${state.homeName} on käyttänyt aikalisän` : `Aloita aikalisä (30s) joukkueelle ${state.homeName}`}
@@ -800,7 +930,7 @@ function OperatorView(props) {
             (state.timeout && state.timeout.active) ||
             (state.timeoutsUsed && state.timeoutsUsed.guest) ||
             state.seconds === 0 ||
-            state.seconds === (state.periodDuration * 60)
+            state.seconds === periodSeconds
           }
           style={{
             padding: "14px 22px",
@@ -810,7 +940,7 @@ function OperatorView(props) {
               (state.timeout && state.timeout.active) ||
               (state.timeoutsUsed && state.timeoutsUsed.guest) ||
               state.seconds === 0 ||
-              state.seconds === (state.periodDuration * 60)
+              state.seconds === periodSeconds
             ) ? "#9ca3af" : "#3b82f6",
             color: "#fff",
             border: "none",
@@ -821,7 +951,7 @@ function OperatorView(props) {
               (state.timeout && state.timeout.active) ||
               (state.timeoutsUsed && state.timeoutsUsed.guest) ||
               state.seconds === 0 ||
-              state.seconds === (state.periodDuration * 60)
+              state.seconds === periodSeconds
             ) ? "not-allowed" : "pointer",
           }}
           title={state.timeoutsUsed && state.timeoutsUsed.guest ? `${state.guestName} on käyttänyt aikalisän` : `Aloita aikalisä (30s) joukkueelle ${state.guestName}`}
@@ -986,6 +1116,23 @@ function PenaltyEditor({ title, list, canAdd, onAdd, onRemove, state }) {
 
 function DisplayView({ state, soundUrl, volume }) {
   const [primed, setPrimed] = useState(false);
+  // Paikallinen pistetieto: päivittyy vasta kun kello käy
+  const [displayScores, setDisplayScores] = useState({ home: state.home, guest: state.guest });
+  useEffect(() => {
+    if (state.running) {
+      setDisplayScores({ home: state.home, guest: state.guest });
+    }
+  }, [state.running, state.home, state.guest]);
+  // RESET_ALL: nollaa näytön pisteet heti
+  const prevHome = useRef(state.home);
+  const prevGuest = useRef(state.guest);
+  useEffect(() => {
+    if (state.home === 0 && state.guest === 0 && (prevHome.current !== 0 || prevGuest.current !== 0)) {
+      setDisplayScores({ home: 0, guest: 0 });
+    }
+    prevHome.current = state.home;
+    prevGuest.current = state.guest;
+  }, [state.home, state.guest]);
   return (
     <div style={{
       minHeight: "100vh",
@@ -1005,6 +1152,9 @@ function DisplayView({ state, soundUrl, volume }) {
   <div style={{ fontSize: "24vw", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
         {formatMMSS((state.timeout && state.timeout.active) ? state.timeout.seconds : state.seconds)}
       </div>
+      {state.breakActive && (
+        <div style={{ fontSize: "6vw", color: "#ef4444", fontWeight: 700 }}>{state.overtime ? "Jatkoajan tauko" : "Erätauko"}</div>
+      )}
   <div style={{ display: "grid", gridTemplateColumns: "auto auto auto", alignItems: "center", gap: "2vw" }}>
         {/* KOTI jäähyt vasemmalle allekkain */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
@@ -1023,9 +1173,9 @@ function DisplayView({ state, soundUrl, volume }) {
                   margin: "0 auto 8px auto"
                 }} />
               )}
-              <ScorePill label={state.homeName ? state.homeName.toUpperCase() : ""} value={state.home} />
+              <ScorePill label={state.homeName ? state.homeName.toUpperCase() : ""} value={displayScores.home} />
             </div>
-            <div style={{ fontSize: "4vw", letterSpacing: 1, padding: "0 2vw" }}>ERÄ {state.period ?? 1}</div>
+            <div style={{ fontSize: "4vw", letterSpacing: 1, padding: "0 2vw" }}>{(state.overtime && state.period === 4) ? "JA" : `ERÄ ${state.period ?? 1}`}</div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
               {(state.timeout && state.timeout.active && state.timeout.team === "guest") && (
                 <div style={{
@@ -1036,7 +1186,7 @@ function DisplayView({ state, soundUrl, volume }) {
                   margin: "0 auto 8px auto"
                 }} />
               )}
-              <ScorePill label={state.guestName ? state.guestName.toUpperCase() : ""} value={state.guest} />
+              <ScorePill label={state.guestName ? state.guestName.toUpperCase() : ""} value={displayScores.guest} />
             </div>
           </div>
         </div>
@@ -1109,7 +1259,7 @@ function PenaltyChips({ title, list }) {
 
 function ScorePill({ label, value }) {
   return (
-    <div style={{ border: "2px solid #fff", borderRadius: 16, padding: "12px 20px", minWidth: 160 }}>
+    <div style={{ border: "2px solid #fff", borderRadius: 16, padding: "12px 20px", width: "30vw", boxSizing: "border-box" }}>
       <div style={{ marginBottom: 4, fontSize: 80 }}>{label}</div>
       <div style={{ fontSize: 200, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{value}</div>
     </div>
