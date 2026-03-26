@@ -465,6 +465,7 @@ function OperatorView(props) {
     if (state.breakActive) skipBreakEndSoundRef.current = false;
   }, [state.breakActive, state.seconds, soundUrl, volume]);
   const [showNewMatchModal, setShowNewMatchModal] = useState(false);
+  const [showTimeoutModal, setShowTimeoutModal] = useState(null); // null tai "home"/"guest"
   const handleNewMatch = () => {
     skipBreakEndSoundRef.current = true;
     setShowNewMatchModal(true);
@@ -643,14 +644,14 @@ function OperatorView(props) {
       <div className="row g-2 mb-3 justify-content-center">
         <div className="col-auto">
           <button className="btn btn-outline-warning" disabled={timeoutDisabledHome}
-            onClick={() => { if (!state.running && window.confirm(`Aloitetaanko aikalisä joukkueelle ${state.homeName}?`)) dispatch({ type: "START_TIMEOUT", team: "home" }); }}
+            onClick={() => setShowTimeoutModal("home")}
             title={state.timeoutsUsed?.home ? `${state.homeName} on käyttänyt aikalisän` : `Aikalisä ${state.homeName}`}>
             ⏱️ Aikalisä {state.homeName}
           </button>
         </div>
         <div className="col-auto">
           <button className="btn btn-outline-warning" disabled={timeoutDisabledGuest}
-            onClick={() => { if (!state.running && window.confirm(`Aloitetaanko aikalisä joukkueelle ${state.guestName}?`)) dispatch({ type: "START_TIMEOUT", team: "guest" }); }}
+            onClick={() => setShowTimeoutModal("guest")}
             title={state.timeoutsUsed?.guest ? `${state.guestName} on käyttänyt aikalisän` : `Aikalisä ${state.guestName}`}>
             ⏱️ Aikalisä {state.guestName}
           </button>
@@ -723,6 +724,21 @@ function OperatorView(props) {
                     </>
                   );
                 })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {showTimeoutModal && (
+        <div className="modal d-block" style={{ background: "rgba(0,0,0,0.4)" }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-body text-center py-4">
+                <h5 className="mb-4">Aloitetaanko aikalisä joukkueelle {showTimeoutModal === "home" ? state.homeName : state.guestName}?</h5>
+                <div className="d-flex gap-3 justify-content-center">
+                  <button className="btn btn-warning btn-lg" onClick={() => { dispatch({ type: "START_TIMEOUT", team: showTimeoutModal }); setShowTimeoutModal(null); }}>Kyllä</button>
+                  <button className="btn btn-secondary btn-lg" onClick={() => setShowTimeoutModal(null)}>Ei</button>
+                </div>
               </div>
             </div>
           </div>
