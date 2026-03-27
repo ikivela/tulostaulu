@@ -132,7 +132,6 @@ function reducer(state, action) {
               running: false,
               breakActive: false,
               direction: "up",
-              timeoutsUsed: { home: false, guest: false },
               rev: state.rev + 1
             };
         }
@@ -175,7 +174,6 @@ function reducer(state, action) {
         period: next,
         running: false,
         direction: "up",
-        timeoutsUsed: { home: false, guest: false },
         rev: state.rev + 1
       };
     }
@@ -227,6 +225,7 @@ function reducer(state, action) {
         direction: "down",
         breakActive: true,
         overtime: true,
+        timeoutsUsed: { home: false, guest: false },
         rev: state.rev + 1,
       };
     }
@@ -258,7 +257,8 @@ function reducer(state, action) {
         overtime: isOvertime,
         running: false,
         direction: "up",
-        timeoutsUsed: { home: false, guest: false },
+        // Jatkoajalla nollataan aikalisät (1 extra per joukkue)
+        timeoutsUsed: isOvertime ? { home: false, guest: false } : state.timeoutsUsed,
         rev: state.rev + 1
       };
     }
@@ -271,7 +271,6 @@ function reducer(state, action) {
         overtime: false,
         running: false,
         direction: "up",
-        timeoutsUsed: { home: false, guest: false },
         rev: state.rev + 1
       };
     }
@@ -892,7 +891,7 @@ function OperatorView(props) {
 
                 <h6>Aikalisät ja jäähyt</h6>
                 <ul>
-                  <li>Kumpikin joukkue voi käyttää yhden <strong>aikalisän</strong> (30 s) per erä. Aikalisä voidaan aloittaa vain kun kello on pysähdyksissä.</li>
+                  <li>Kumpikin joukkue voi käyttää yhden <strong>aikalisän</strong> (30 s) per ottelu. Jos ottelu menee jatkoajalle, kumpikin joukkue saa yhden lisäaikalisän. Aikalisä voidaan aloittaa vain kun kello on pysähdyksissä.</li>
                   <li><strong>Jäähyt</strong> (2:00) laskevat alaspäin pelikellon käydessä. Joukkueella voi olla enintään 2 jäähyä samanaikaisesti.</li>
                 </ul>
 
